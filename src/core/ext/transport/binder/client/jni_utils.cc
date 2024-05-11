@@ -12,13 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <grpc/support/port_platform.h>
-
 #include "src/core/ext/transport/binder/client/jni_utils.h"
+
+#include "absl/log/check.h"
+
+#include <grpc/support/port_platform.h>
 
 #ifndef GRPC_NO_BINDER
 
 #include <grpc/support/log.h>
+
+#include "src/core/lib/gprpp/crash.h"
 
 #if defined(ANDROID) || defined(__ANDROID__)
 
@@ -39,7 +43,7 @@ jclass FindNativeConnectionHelper(
     }
     jclass global_cl = static_cast<jclass>(env->NewGlobalRef(cl));
     env->DeleteLocalRef(cl);
-    GPR_ASSERT(global_cl != nullptr);
+    CHECK_NE(global_cl, nullptr);
     return global_cl;
   };
   static jclass connection_helper_class = do_find();
@@ -86,6 +90,28 @@ void TryEstablishConnection(JNIEnv* env, jobject application,
                             env->NewStringUTF(std::string(pkg).c_str()),
                             env->NewStringUTF(std::string(cls).c_str()),
                             env->NewStringUTF(std::string(action_name).c_str()),
+                            env->NewStringUTF(std::string(conn_id).c_str()));
+}
+
+void TryEstablishConnectionWithUri(JNIEnv* env, jobject application,
+                                   absl::string_view uri,
+                                   absl::string_view conn_id) {
+  std::string method = "tryEstablishConnectionWithUri";
+  std::string type =
+      "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)V";
+
+  jclass cl = FindNativeConnectionHelper(env);
+  if (cl == nullptr) {
+    return;
+  }
+
+  jmethodID mid = env->GetStaticMethodID(cl, method.c_str(), type.c_str());
+  if (mid == nullptr) {
+    gpr_log(GPR_ERROR, "No method id %s", method.c_str());
+  }
+
+  env->CallStaticVoidMethod(cl, mid, application,
+                            env->NewStringUTF(std::string(uri).c_str()),
                             env->NewStringUTF(std::string(conn_id).c_str()));
 }
 

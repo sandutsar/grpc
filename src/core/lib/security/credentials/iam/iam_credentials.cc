@@ -1,35 +1,41 @@
-/*
- *
- * Copyright 2016 gRPC authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- */
-
-#include <grpc/support/port_platform.h>
+//
+//
+// Copyright 2016 gRPC authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+//
 
 #include "src/core/lib/security/credentials/iam/iam_credentials.h"
 
+#include <stdlib.h>
+
+#include <memory>
+#include <utility>
+
+#include "absl/log/check.h"
 #include "absl/strings/str_format.h"
+#include "absl/strings/string_view.h"
 
-#include <grpc/support/alloc.h>
 #include <grpc/support/log.h>
-#include <grpc/support/string_util.h>
-#include <grpc/support/sync.h>
+#include <grpc/support/port_platform.h>
 
+#include "src/core/lib/debug/trace.h"
 #include "src/core/lib/gprpp/ref_counted_ptr.h"
+#include "src/core/lib/iomgr/exec_ctx.h"
 #include "src/core/lib/promise/promise.h"
 #include "src/core/lib/surface/api_trace.h"
+#include "src/core/lib/transport/metadata_batch.h"
 
 grpc_core::ArenaPromise<absl::StatusOr<grpc_core::ClientMetadataHandle>>
 grpc_google_iam_credentials::GetRequestMetadata(
@@ -56,7 +62,10 @@ grpc_google_iam_credentials::grpc_google_iam_credentials(
           "GoogleIAMCredentials{Token:%s,AuthoritySelector:%s}",
           token != nullptr ? "present" : "absent", authority_selector)) {}
 
-const char* grpc_google_iam_credentials::Type() { return "Iam"; }
+grpc_core::UniqueTypeName grpc_google_iam_credentials::Type() {
+  static grpc_core::UniqueTypeName::Factory kFactory("Iam");
+  return kFactory.Create();
+}
 
 grpc_call_credentials* grpc_google_iam_credentials_create(
     const char* token, const char* authority_selector, void* reserved) {
@@ -65,9 +74,9 @@ grpc_call_credentials* grpc_google_iam_credentials_create(
       "grpc_iam_credentials_create(token=%s, authority_selector=%s, "
       "reserved=%p)",
       3, (token, authority_selector, reserved));
-  GPR_ASSERT(reserved == nullptr);
-  GPR_ASSERT(token != nullptr);
-  GPR_ASSERT(authority_selector != nullptr);
+  CHECK_EQ(reserved, nullptr);
+  CHECK_NE(token, nullptr);
+  CHECK_NE(authority_selector, nullptr);
   return grpc_core::MakeRefCounted<grpc_google_iam_credentials>(
              token, authority_selector)
       .release();

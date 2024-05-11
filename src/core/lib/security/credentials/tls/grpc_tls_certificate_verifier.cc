@@ -14,18 +14,25 @@
 // limitations under the License.
 //
 
-#include <grpc/support/port_platform.h>
-
 #include "src/core/lib/security/credentials/tls/grpc_tls_certificate_verifier.h"
+
+#include <string.h>
+
+#include <string>
+#include <utility>
+
+#include "absl/log/check.h"
+#include "absl/strings/string_view.h"
 
 #include <grpc/support/alloc.h>
 #include <grpc/support/log.h>
+#include <grpc/support/port_platform.h>
 #include <grpc/support/string_util.h>
 
+#include "src/core/lib/debug/trace.h"
 #include "src/core/lib/gprpp/host_port.h"
-#include "src/core/lib/gprpp/stat.h"
+#include "src/core/lib/iomgr/exec_ctx.h"
 #include "src/core/lib/security/credentials/tls/tls_utils.h"
-#include "src/core/lib/slice/slice_internal.h"
 #include "src/core/lib/surface/api_trace.h"
 
 namespace grpc_core {
@@ -60,6 +67,11 @@ bool ExternalCertificateVerifier::Verify(
   return is_done;
 }
 
+UniqueTypeName ExternalCertificateVerifier::type() const {
+  static UniqueTypeName::Factory kFactory("External");
+  return kFactory.Create();
+}
+
 void ExternalCertificateVerifier::OnVerifyDone(
     grpc_tls_custom_verification_check_request* request, void* callback_arg,
     grpc_status_code status, const char* error_details) {
@@ -75,7 +87,7 @@ void ExternalCertificateVerifier::OnVerifyDone(
     }
   }
   if (callback != nullptr) {
-    absl::Status return_status = absl::OkStatus();
+    absl::Status return_status;
     if (status != GRPC_STATUS_OK) {
       return_status =
           absl::Status(static_cast<absl::StatusCode>(status), error_details);
@@ -85,13 +97,22 @@ void ExternalCertificateVerifier::OnVerifyDone(
 }
 
 //
+// NoOpCertificateVerifier
+//
+
+UniqueTypeName NoOpCertificateVerifier::type() const {
+  static UniqueTypeName::Factory kFactory("NoOp");
+  return kFactory.Create();
+}
+
+//
 // HostNameCertificateVerifier
 //
 
 bool HostNameCertificateVerifier::Verify(
     grpc_tls_custom_verification_check_request* request,
     std::function<void(absl::Status)>, absl::Status* sync_status) {
-  GPR_ASSERT(request != nullptr);
+  CHECK_NE(request, nullptr);
   // Extract the target name, and remove its port.
   const char* target_name = request->target_name;
   if (target_name == nullptr) {
@@ -150,6 +171,11 @@ bool HostNameCertificateVerifier::Verify(
   *sync_status = absl::Status(absl::StatusCode::kUnauthenticated,
                               "Hostname Verification Check failed.");
   return true;  // synchronous check
+}
+
+UniqueTypeName HostNameCertificateVerifier::type() const {
+  static UniqueTypeName::Factory kFactory("Hostname");
+  return kFactory.Create();
 }
 
 }  // namespace grpc_core

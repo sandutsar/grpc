@@ -12,14 +12,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <map>
+#include <stdint.h>
+#include <sys/types.h>
 
+#include <functional>
+#include <limits>
+#include <map>
+#include <memory>
+#include <utility>
+
+#include "absl/status/status.h"
+#include "absl/strings/str_cat.h"
+#include "absl/types/optional.h"
+
+#include <grpc/event_engine/memory_allocator.h>
+#include <grpc/event_engine/memory_request.h>
+#include <grpc/support/log.h>
+
+#include "src/core/lib/debug/trace.h"
+#include "src/core/lib/experiments/config.h"
 #include "src/core/lib/gpr/useful.h"
+#include "src/core/lib/gprpp/debug_location.h"
+#include "src/core/lib/iomgr/closure.h"
+#include "src/core/lib/iomgr/error.h"
 #include "src/core/lib/iomgr/exec_ctx.h"
 #include "src/core/lib/resource_quota/memory_quota.h"
 #include "src/libfuzzer/libfuzzer_macro.h"
 #include "test/core/resource_quota/call_checker.h"
 #include "test/core/resource_quota/memory_quota_fuzzer.pb.h"
+#include "test/core/test_util/fuzz_config_vars.h"
 
 bool squelch = true;
 bool leak_check = true;
@@ -70,10 +91,9 @@ class Fuzzer {
           memory_quotas_.erase(action.quota());
           break;
         case memory_quota_fuzzer::Action::kCreateAllocator:
-          WithQuota(action.quota(), [this, action, i](MemoryQuota* q) {
-            memory_allocators_.emplace(
-                action.allocator(),
-                q->CreateMemoryOwner(absl::StrCat("allocator-step-", i)));
+          WithQuota(action.quota(), [this, action](MemoryQuota* q) {
+            memory_allocators_.emplace(action.allocator(),
+                                       q->CreateMemoryOwner());
           });
           break;
         case memory_quota_fuzzer::Action::kDeleteAllocator:
@@ -83,12 +103,6 @@ class Fuzzer {
           WithQuota(action.quota(), [action](MemoryQuota* q) {
             q->SetSize(Clamp(action.set_quota_size(), uint64_t{0},
                              uint64_t{std::numeric_limits<ssize_t>::max()}));
-          });
-          break;
-        case memory_quota_fuzzer::Action::kRebindQuota:
-          WithQuota(action.quota(), [this, action](MemoryQuota* q) {
-            WithAllocator(action.allocator(),
-                          [q](MemoryOwner* a) { a->Rebind(q); });
           });
           break;
         case memory_quota_fuzzer::Action::kCreateAllocation: {
@@ -128,7 +142,7 @@ class Fuzzer {
                     delete args;
                   },
                   args, nullptr);
-              ExecCtx::Get()->Run(DEBUG_LOCATION, closure, GRPC_ERROR_NONE);
+              ExecCtx::Get()->Run(DEBUG_LOCATION, closure, absl::OkStatus());
             };
             auto pass = MapReclamationPass(cfg.pass());
             WithAllocator(
@@ -177,6 +191,8 @@ static void dont_log(gpr_log_func_args* /*args*/) {}
 
 DEFINE_PROTO_FUZZER(const memory_quota_fuzzer::Msg& msg) {
   if (squelch) gpr_set_log_function(dont_log);
+  grpc_core::ApplyFuzzConfigVars(msg.config_vars());
+  grpc_core::TestOnlyReloadExperimentsFromConfigVariables();
   gpr_log_verbosity_init();
   grpc_tracer_init();
   grpc_core::testing::Fuzzer().Run(msg);

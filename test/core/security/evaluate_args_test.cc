@@ -12,16 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <grpc/support/port_platform.h>
-
 #include "src/core/lib/security/authorization/evaluate_args.h"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <grpc/support/port_platform.h>
+
 #include "src/core/lib/address_utils/sockaddr_utils.h"
-#include "test/core/util/evaluate_args_test_util.h"
-#include "test/core/util/test_config.h"
+#include "test/core/test_util/evaluate_args_test_util.h"
+#include "test/core/test_util/test_config.h"
 
 namespace grpc_core {
 
@@ -81,7 +81,7 @@ TEST_F(EvaluateArgsTest, TestLocalAddressAndPort) {
   EvaluateArgs args = util_.MakeEvaluateArgs();
   grpc_resolved_address local_address = args.GetLocalAddress();
   EXPECT_EQ(grpc_sockaddr_to_uri(&local_address).value(),
-            "ipv6:[2001:db8:85a3::8a2e:370:7334]:456");
+            "ipv6:%5B2001:db8:85a3::8a2e:370:7334%5D:456");
   EXPECT_EQ(args.GetLocalAddressString(),
             "2001:0db8:85a3:0000:0000:8a2e:0370:7334");
   EXPECT_EQ(args.GetLocalPort(), 456);

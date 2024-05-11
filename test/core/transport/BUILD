@@ -31,13 +31,13 @@ grpc_cc_test(
     deps = [
         "//:gpr",
         "//:grpc",
-        "//test/core/util:grpc_test_util",
+        "//test/core/test_util:grpc_test_util",
     ],
 )
 
 grpc_cc_test(
-    name = "byte_stream_test",
-    srcs = ["byte_stream_test.cc"],
+    name = "interception_chain_test",
+    srcs = ["interception_chain_test.cc"],
     external_deps = [
         "gtest",
     ],
@@ -45,9 +45,25 @@ grpc_cc_test(
     uses_event_engine = False,
     uses_polling = False,
     deps = [
-        "//:gpr",
-        "//:grpc",
-        "//test/core/util:grpc_test_util",
+        "//:grpc_base",
+        "//src/core:interception_chain",
+        "//src/core:resource_quota",
+        "//test/core/promise:poll_matcher",
+    ],
+)
+
+grpc_cc_test(
+    name = "call_filters_test",
+    srcs = ["call_filters_test.cc"],
+    external_deps = [
+        "gtest",
+    ],
+    language = "C++",
+    uses_event_engine = False,
+    uses_polling = False,
+    deps = [
+        "//src/core:call_filters",
+        "//test/core/promise:poll_matcher",
     ],
 )
 
@@ -61,7 +77,8 @@ grpc_cc_test(
     deps = [
         "//:gpr",
         "//:grpc",
-        "//test/core/util:grpc_test_util",
+        "//test/core/test_util:grpc_test_util",
+        "//test/core/test_util:grpc_test_util_base",
     ],
 )
 
@@ -75,7 +92,8 @@ grpc_cc_test(
     deps = [
         "//:gpr",
         "//:grpc",
-        "//test/core/util:grpc_test_util",
+        "//test/core/test_util:grpc_test_util",
+        "//test/core/test_util:grpc_test_util_base",
     ],
 )
 
@@ -89,7 +107,8 @@ grpc_cc_test(
     deps = [
         "//:gpr",
         "//:grpc",
-        "//test/core/util:grpc_test_util",
+        "//test/core/test_util:grpc_test_util",
+        "//test/core/test_util:grpc_test_util_base",
     ],
 )
 
@@ -97,40 +116,46 @@ grpc_cc_test(
     name = "parsed_metadata_test",
     srcs = ["parsed_metadata_test.cc"],
     external_deps = [
+        "absl/log:check",
         "gtest",
     ],
     language = "C++",
     deps = [
         "//:gpr",
         "//:grpc",
-        "//test/core/util:grpc_test_util",
+        "//test/core/test_util:grpc_test_util",
     ],
 )
 
 grpc_cc_test(
-    name = "pid_controller_test",
-    srcs = ["pid_controller_test.cc"],
+    name = "promise_endpoint_test",
+    srcs = ["promise_endpoint_test.cc"],
     external_deps = [
         "gtest",
     ],
     language = "C++",
     deps = [
-        "//:gpr",
         "//:grpc",
-        "//test/core/util:grpc_test_util",
+        "//src/core:activity",
+        "//src/core:grpc_promise_endpoint",
+        "//src/core:join",
+        "//src/core:seq",
+        "//test/core/promise:test_wakeup_schedulers",
     ],
 )
 
 grpc_cc_test(
     name = "status_conversion_test",
     srcs = ["status_conversion_test.cc"],
+    external_deps = ["gtest"],
     language = "C++",
     uses_event_engine = False,
     uses_polling = False,
     deps = [
         "//:gpr",
         "//:grpc",
-        "//test/core/util:grpc_test_util",
+        "//test/core/test_util:grpc_test_util",
+        "//test/core/test_util:grpc_test_util_base",
     ],
 )
 
@@ -146,6 +171,7 @@ grpc_cc_test(
     deps = [
         "//:gpr",
         "//:grpc",
-        "//test/core/util:grpc_test_util",
+        "//test/core/test_util:grpc_test_util",
+        "//test/core/test_util:grpc_test_util_base",
     ],
 )

@@ -12,38 +12,38 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef GRPC_CORE_EXT_TRANSPORT_BINDER_TRANSPORT_BINDER_STREAM_H
-#define GRPC_CORE_EXT_TRANSPORT_BINDER_TRANSPORT_BINDER_STREAM_H
+#ifndef GRPC_SRC_CORE_EXT_TRANSPORT_BINDER_TRANSPORT_BINDER_STREAM_H
+#define GRPC_SRC_CORE_EXT_TRANSPORT_BINDER_TRANSPORT_BINDER_STREAM_H
 
 #include <grpc/support/port_platform.h>
 
 #include "src/core/ext/transport/binder/transport/binder_transport.h"
 
 struct RecvInitialMetadataArgs {
-  grpc_binder_stream* gbs;
-  grpc_binder_transport* gbt;
+  grpc_binder_stream* stream;
+  grpc_binder_transport* transport;
   int tx_code;
   absl::StatusOr<grpc_binder::Metadata> initial_metadata;
 };
 
 struct RecvMessageArgs {
-  grpc_binder_stream* gbs;
-  grpc_binder_transport* gbt;
+  grpc_binder_stream* stream;
+  grpc_binder_transport* transport;
   int tx_code;
   absl::StatusOr<std::string> message;
 };
 
 struct RecvTrailingMetadataArgs {
-  grpc_binder_stream* gbs;
-  grpc_binder_transport* gbt;
+  grpc_binder_stream* stream;
+  grpc_binder_transport* transport;
   int tx_code;
   absl::StatusOr<grpc_binder::Metadata> trailing_metadata;
   int status;
 };
 
 struct RegisterStreamArgs {
-  grpc_binder_stream* gbs;
-  grpc_binder_transport* gbt;
+  grpc_binder_stream* stream;
+  grpc_binder_transport* transport;
 };
 
 // TODO(mingcl): Figure out if we want to use class instead of struct here
@@ -59,19 +59,18 @@ struct grpc_binder_stream {
         tx_code(tx_code),
         is_client(is_client),
         is_closed(false) {
-    recv_initial_metadata_args.gbs = this;
-    recv_initial_metadata_args.gbt = t;
-    recv_message_args.gbs = this;
-    recv_message_args.gbt = t;
-    recv_trailing_metadata_args.gbs = this;
-    recv_trailing_metadata_args.gbt = t;
+    recv_initial_metadata_args.stream = this;
+    recv_initial_metadata_args.transport = t;
+    recv_message_args.stream = this;
+    recv_message_args.transport = t;
+    recv_trailing_metadata_args.stream = this;
+    recv_trailing_metadata_args.transport = t;
   }
 
   ~grpc_binder_stream() {
-    GRPC_ERROR_UNREF(cancel_self_error);
     if (destroy_stream_then_closure != nullptr) {
       grpc_core::ExecCtx::Run(DEBUG_LOCATION, destroy_stream_then_closure,
-                              GRPC_ERROR_NONE);
+                              absl::OkStatus());
     }
   }
 
@@ -80,7 +79,6 @@ struct grpc_binder_stream {
   grpc_binder_transport* t;
   grpc_stream_refcount* refcount;
   grpc_core::Arena* arena;
-  grpc_core::ManualConstructor<grpc_core::SliceBufferByteStream> sbs;
   int tx_code;
   const bool is_client;
   bool is_closed;
@@ -89,7 +87,7 @@ struct grpc_binder_stream {
   grpc_closure destroy_stream;
 
   // The reason why this stream is cancelled and closed.
-  grpc_error_handle cancel_self_error = GRPC_ERROR_NONE;
+  grpc_error_handle cancel_self_error;
 
   grpc_closure recv_initial_metadata_closure;
   RecvInitialMetadataArgs recv_initial_metadata_args;
@@ -106,7 +104,7 @@ struct grpc_binder_stream {
   grpc_metadata_batch* recv_initial_metadata;
   grpc_closure* recv_initial_metadata_ready = nullptr;
   bool* trailing_metadata_available = nullptr;
-  grpc_core::OrphanablePtr<grpc_core::ByteStream>* recv_message;
+  absl::optional<grpc_core::SliceBuffer>* recv_message;
   grpc_closure* recv_message_ready = nullptr;
   bool* call_failed_before_recv_message = nullptr;
   grpc_metadata_batch* recv_trailing_metadata;
@@ -116,4 +114,4 @@ struct grpc_binder_stream {
   bool need_to_call_trailing_metadata_callback = false;
 };
 
-#endif  // GRPC_CORE_EXT_TRANSPORT_BINDER_TRANSPORT_BINDER_STREAM_H
+#endif  // GRPC_SRC_CORE_EXT_TRANSPORT_BINDER_TRANSPORT_BINDER_STREAM_H

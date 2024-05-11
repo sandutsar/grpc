@@ -12,13 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <grpc/support/port_platform.h>
-
 #include "src/core/lib/security/authorization/cel_authorization_engine.h"
 
-#include "absl/memory/memory.h"
+#include <stddef.h>
 
-#include "src/core/lib/address_utils/sockaddr_utils.h"
+#include <algorithm>
+#include <utility>
+
+#include "absl/strings/string_view.h"
+#include "absl/types/optional.h"
+#include "absl/types/span.h"
+#include "upb/base/string_view.h"
+#include "upb/message/map.h"
+
+#include <grpc/support/log.h>
+#include <grpc/support/port_platform.h>
 
 namespace grpc_core {
 
@@ -54,7 +62,7 @@ CelAuthorizationEngine::CreateCelAuthorizationEngine(
                          policy and one allow policy, in that order.");
     return nullptr;
   } else {
-    return absl::make_unique<CelAuthorizationEngine>(rbac_policies);
+    return std::make_unique<CelAuthorizationEngine>(rbac_policies);
   }
 }
 

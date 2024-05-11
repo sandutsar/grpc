@@ -1,4 +1,4 @@
-// Copyright 2021 The gRPC Authors
+// Copyright 2023 The gRPC Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,42 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include <grpc/support/port_platform.h>
-
-#include <functional>
-#include <memory>
-
 #include <grpc/event_engine/event_engine.h>
-
-#include "src/core/lib/event_engine/event_engine_factory.h"
-#include "src/core/lib/gprpp/sync.h"
+#include <grpc/support/port_platform.h>
 
 namespace grpc_event_engine {
 namespace experimental {
 
-namespace {
-const std::function<std::unique_ptr<EventEngine>()>* g_event_engine_factory =
-    nullptr;
-grpc_core::Mutex* g_mu = new grpc_core::Mutex();
-}  // namespace
+const EventEngine::TaskHandle EventEngine::TaskHandle::kInvalid = {-1, -1};
+const EventEngine::ConnectionHandle EventEngine::ConnectionHandle::kInvalid = {
+    -1, -1};
 
-void SetDefaultEventEngineFactory(
-    const std::function<std::unique_ptr<EventEngine>()>* factory) {
-  grpc_core::MutexLock lock(g_mu);
-  g_event_engine_factory = factory;
+bool operator==(const EventEngine::TaskHandle& lhs,
+                const EventEngine::TaskHandle& rhs) {
+  return lhs.keys[0] == rhs.keys[0] && lhs.keys[1] == rhs.keys[1];
 }
 
-std::unique_ptr<EventEngine> CreateEventEngine() {
-  grpc_core::MutexLock lock(g_mu);
-  if (g_event_engine_factory != nullptr) {
-    return (*g_event_engine_factory)();
-  }
-  return DefaultEventEngineFactory();
+bool operator!=(const EventEngine::TaskHandle& lhs,
+                const EventEngine::TaskHandle& rhs) {
+  return !(lhs == rhs);
 }
 
-EventEngine* GetDefaultEventEngine() {
-  static EventEngine* default_event_engine = CreateEventEngine().release();
-  return default_event_engine;
+bool operator==(const EventEngine::ConnectionHandle& lhs,
+                const EventEngine::ConnectionHandle& rhs) {
+  return lhs.keys[0] == rhs.keys[0] && lhs.keys[1] == rhs.keys[1];
+}
+
+bool operator!=(const EventEngine::ConnectionHandle& lhs,
+                const EventEngine::ConnectionHandle& rhs) {
+  return !(lhs == rhs);
 }
 
 }  // namespace experimental

@@ -14,7 +14,12 @@
 
 #include "src/core/lib/promise/join.h"
 
-#include <gtest/gtest.h>
+#include <memory>
+#include <tuple>
+
+#include "gtest/gtest.h"
+
+#include "src/core/lib/promise/poll.h"
 
 namespace grpc_core {
 

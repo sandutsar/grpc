@@ -1,37 +1,85 @@
-/*
- *
- * Copyright 2015-2016 gRPC authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- */
+//
+//
+// Copyright 2015-2016 gRPC authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+//
 
+#include <limits.h>
+#include <string.h>
+
+#include <algorithm>
+#include <memory>
+#include <string>
 #include <utility>
+#include <vector>
 
-#include <grpc/support/cpu.h>
+#include "absl/log/check.h"
+
+#include <grpc/grpc.h>
+#include <grpc/impl/channel_arg_names.h>
+#include <grpc/impl/compression_types.h>
 #include <grpc/support/log.h>
+#include <grpc/support/port_platform.h>
+#include <grpc/support/sync.h>
+#include <grpc/support/workaround_list.h>
+#include <grpcpp/completion_queue.h>
+#include <grpcpp/impl/server_builder_option.h>
+#include <grpcpp/impl/server_builder_plugin.h>
 #include <grpcpp/impl/service_type.h>
 #include <grpcpp/resource_quota.h>
+#include <grpcpp/security/authorization_policy_provider.h>
+#include <grpcpp/security/server_credentials.h>
 #include <grpcpp/server.h>
 #include <grpcpp/server_builder.h>
+#include <grpcpp/server_context.h>
+#include <grpcpp/server_interface.h>
+#include <grpcpp/support/channel_arguments.h>
+#include <grpcpp/support/server_interceptor.h>
 
-#include "src/core/lib/channel/channel_args.h"
+#include "src/core/ext/transport/chttp2/server/chttp2_server.h"
 #include "src/core/lib/gpr/string.h"
 #include "src/core/lib/gpr/useful.h"
+#include "src/core/server/server.h"
 #include "src/cpp/server/external_connection_acceptor_impl.h"
-#include "src/cpp/server/thread_pool_interface.h"
 
 namespace grpc {
+namespace {
+
+// A PIMPL wrapper class that owns the only ref to the passive listener
+// implementation. This is returned to the application.
+class PassiveListenerOwner final
+    : public grpc_core::experimental::PassiveListener {
+ public:
+  explicit PassiveListenerOwner(std::shared_ptr<PassiveListener> listener)
+      : listener_(std::move(listener)) {}
+
+  absl::Status AcceptConnectedEndpoint(
+      std::unique_ptr<grpc_event_engine::experimental::EventEngine::Endpoint>
+          endpoint) override {
+    return listener_->AcceptConnectedEndpoint(std::move(endpoint));
+  }
+
+  absl::Status AcceptConnectedFd(int fd) override {
+    return listener_->AcceptConnectedFd(fd);
+  }
+
+ private:
+  std::shared_ptr<PassiveListener> listener_;
+};
+
+}  // namespace
 
 static std::vector<std::unique_ptr<ServerBuilderPlugin> (*)()>*
     g_plugin_factory_list;
@@ -139,6 +187,13 @@ void ServerBuilder::experimental_type::SetAuthorizationPolicyProvider(
   builder_->authorization_provider_ = std::move(provider);
 }
 
+void ServerBuilder::experimental_type::EnableCallMetricRecording(
+    experimental::ServerMetricRecorder* server_metric_recorder) {
+  builder_->AddChannelArgument(GRPC_ARG_SERVER_CALL_METRIC_RECORDING, 1);
+  CHECK_EQ(builder_->server_metric_recorder_, nullptr);
+  builder_->server_metric_recorder_ = server_metric_recorder;
+}
+
 ServerBuilder& ServerBuilder::SetOption(
     std::unique_ptr<ServerBuilderOption> option) {
   options_.push_back(std::move(option));
@@ -196,6 +251,18 @@ ServerBuilder& ServerBuilder::SetResourceQuota(
   resource_quota_ = resource_quota.c_resource_quota();
   grpc_resource_quota_ref(resource_quota_);
   return *this;
+}
+
+ServerBuilder& ServerBuilder::experimental_type::AddPassiveListener(
+    std::shared_ptr<grpc::ServerCredentials> creds,
+    std::unique_ptr<experimental::PassiveListener>& passive_listener) {
+  auto core_passive_listener =
+      std::make_shared<grpc_core::experimental::PassiveListenerImpl>();
+  builder_->unstarted_passive_listeners_.emplace_back(core_passive_listener,
+                                                      std::move(creds));
+  passive_listener =
+      std::make_unique<PassiveListenerOwner>(std::move(core_passive_listener));
+  return *builder_;
 }
 
 ServerBuilder& ServerBuilder::AddListeningPort(
@@ -340,7 +407,7 @@ std::unique_ptr<grpc::Server> ServerBuilder::BuildAndStart() {
       &args, sync_server_cqs, sync_server_settings_.min_pollers,
       sync_server_settings_.max_pollers, sync_server_settings_.cq_timeout_msec,
       std::move(acceptors_), server_config_fetcher_, resource_quota_,
-      std::move(interceptor_creators_)));
+      std::move(interceptor_creators_), server_metric_recorder_));
 
   ServerInitializer* initializer = server->initializer();
 
@@ -369,6 +436,26 @@ std::unique_ptr<grpc::Server> ServerBuilder::BuildAndStart() {
   for (const auto& cq : cqs_) {
     grpc_server_register_completion_queue(server->server_, cq->cq(), nullptr);
     cq->RegisterServer(server.get());
+  }
+
+  for (auto& unstarted_listener : unstarted_passive_listeners_) {
+    has_frequently_polled_cqs = true;
+    auto passive_listener = unstarted_listener.passive_listener.lock();
+    auto* core_server = grpc_core::Server::FromC(server->c_server());
+    if (passive_listener != nullptr) {
+      auto* creds = unstarted_listener.credentials->c_creds();
+      if (creds == nullptr) {
+        gpr_log(GPR_ERROR, "Credentials missing for PassiveListener");
+        return nullptr;
+      }
+      auto success = grpc_server_add_passive_listener(
+          core_server, creds, std::move(passive_listener));
+      if (!success.ok()) {
+        gpr_log(GPR_ERROR, "Failed to create a passive listener: %s",
+                success.ToString().c_str());
+        return nullptr;
+      }
+    }
   }
 
   if (!has_frequently_polled_cqs) {
